@@ -265,6 +265,11 @@ struct layer {
     int classfix;
     int absolute;
 
+	//pseudo label
+	int pseudo_train;
+	float ignore_lb;
+	float ignore_ub;
+
     int onlyforward;
     int stopbackward;
     int dontload;

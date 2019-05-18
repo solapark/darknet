@@ -10,7 +10,8 @@
 #include <string.h>
 #include <stdlib.h>
 
-layer make_yolo_layer(int batch, int w, int h, int n, int total, int *mask, int classes, int max_boxes)
+//layer make_yolo_layer(int batch, int w, int h, int n, int total, int *mask, int classes, int max_boxes)
+layer make_yolo_layer(int batch, int w, int h, int n, int total, int *mask, int classes, int max_boxes, int pseudo_train, float ignore_lb, float ignore_ub)
 {
     int i;
     layer l = { (LAYER_TYPE)0 };
@@ -68,6 +69,10 @@ layer make_yolo_layer(int batch, int w, int h, int n, int total, int *mask, int 
         l.delta = (float*)calloc(batch * l.outputs, sizeof(float));
     }
 #endif
+	
+	l.pseudo_train = pseudo_train;
+	l.ignore_lb = ignore_lb;
+	l.ignore_ub = ignore_ub;
 
     fprintf(stderr, "yolo\n");
     srand(time(0));
@@ -202,7 +207,6 @@ static box float_to_box_stride(float *f, int stride)
 
 void forward_yolo_layer(const layer l, network_state state)
 {
-    int i,j,b,t,n;
     memcpy(l.output, state.input, l.outputs*l.batch*sizeof(float));
 
 #ifndef GPU
@@ -218,6 +222,18 @@ void forward_yolo_layer(const layer l, network_state state)
 
     memset(l.delta, 0, l.outputs * l.batch * sizeof(float));
     if(!state.train) return;
+
+	if (l.pseudo_train){
+		forward_yolo_layer_pseudo(l, state);
+	}else{
+		forward_yolo_layer_original(l, state);
+	}
+}
+
+void forward_yolo_layer_original(const layer l, network_state state)
+{
+    int i,j,b,t,n;
+	
     float avg_iou = 0;
     float recall = 0;
     float recall75 = 0;
@@ -314,6 +330,147 @@ void forward_yolo_layer(const layer l, network_state state)
             }
         }
     }
+    *(l.cost) = pow(mag_array(l.delta, l.outputs * l.batch), 2);
+    printf("Region %d Avg IOU: %f, Class: %f, Obj: %f, No Obj: %f, .5R: %f, .75R: %f,  count: %d\n", state.index, avg_iou/count, avg_cat/class_count, avg_obj/count, avg_anyobj/(l.w*l.h*l.n*l.batch), recall/count, recall75/count, count);
+}
+
+void forward_yolo_layer_pseudo(const layer l, network_state state)
+{
+    int i,j,b,t,n;
+	
+    float avg_iou = 0;
+    float recall = 0;
+    float recall75 = 0;
+    float avg_cat = 0;
+    float avg_obj = 0;
+    float avg_anyobj = 0;
+    int count = 0;
+    int class_count = 0;
+    int *anchor_inds = (int *)calloc(l.n, sizeof(int));
+    for (int i = 0; i < l.n; ++i) {
+        anchor_inds[i] = i;
+    }
+    *(l.cost) = 0;
+
+	int fp_cnt = 0;
+	int tp_cnt = 0;
+	int ignore_cnt = 0;
+	int	fp_mask_mismatch_cnt = 0;
+
+    for (b = 0; b < l.batch; ++b) {
+        for (j = 0; j < l.h; ++j) {
+            for (i = 0; i < l.w; ++i) {
+				shuffle(anchor_inds, l.n, sizeof(int));
+				/*
+				printf("anchor inds");
+				for(int p = 0; p < l.n; ++p){
+					printf(" %d", anchor_inds[p]);
+				}
+				printf("\n");
+				*/
+                for (t = 0; t < l.n; ++t) {
+					n = anchor_inds[t];
+                    int obj_index = entry_index(l, b, n*l.w*l.h + j*l.w + i, 4);
+                    avg_anyobj += l.output[obj_index];
+					l.delta[obj_index] = 0 - l.output[obj_index];
+
+					/*
+					printf("b : %d, h : %d, w : %d, t : %d, n : %d, objness : %2.4f\n", b, j, i, t, n, l.output[obj_index]);
+					*/
+                    if (l.output[obj_index] < l.ignore_lb) {
+						/*
+						printf("FP_objness\n");
+						fp_cnt ++;
+						*/
+						continue;
+					}
+
+					int class_index = entry_index(l, b, n*l.w*l.h + j*l.w + i, 4 + 1);
+					int true_class_id = -1;
+					float class_score = -1;
+					for(int p = 0 ; p < l.classes; p++){
+						float class_p_score = l.output[class_index + l.w*l.h*p];
+						if(class_p_score > class_score){
+							class_score = class_p_score;
+							true_class_id = p;
+						}
+					}
+						
+					float final_score = l.output[obj_index] * class_score;
+					if(final_score < l.ignore_lb){
+						l.delta[obj_index] = 0 - l.output[obj_index];
+						/*
+						printf("FP_final_score\n");
+						fp_cnt ++;
+						*/
+						continue;
+					}
+					if( l.ignore_lb< final_score && final_score < l.ignore_ub){
+						l.delta[obj_index] = 0;
+						/*
+						printf("ignore %2.4f\n", final_score);
+						//getchar();
+						ignore_cnt ++;
+						*/
+						continue;
+					}
+
+					int box_index = entry_index(l, b, n*l.w*l.h + j*l.w + i, 0);
+					box truth = get_yolo_box(l.output, l.biases, l.mask[n], box_index, i, j, l.w, l.h, state.net.w, state.net.h, l.w*l.h);
+
+					float best_iou = 0;
+		            int best_n = 0;
+					box truth_shift = truth;
+					truth_shift.x = truth_shift.y = 0;
+		            for(int p = 0; p < l.total; ++p){
+						box pred = {0};
+		                pred.w = l.biases[2*p]/ state.net.w;
+		                pred.h = l.biases[2*p+1]/ state.net.h;
+		                float iou = box_iou(pred, truth_shift);
+		                if (iou > best_iou){
+		                    best_iou = iou;
+			                best_n = p;
+				         }
+		            }
+
+				    int mask_n = int_index(l.mask, best_n, l.n);
+		            if(mask_n >= 0){
+		                int box_index = entry_index(l, b, mask_n*l.w*l.h + j*l.w + i, 0);
+		                float iou = delta_yolo_box(truth, l.output, l.biases, best_n, box_index, i, j, l.w, l.h, state.net.w, state.net.h, l.delta, (2-truth.w*truth.h), l.w*l.h);
+
+		                int obj_index = entry_index(l, b, mask_n*l.w*l.h + j*l.w + i, 4);
+		                avg_obj += l.output[obj_index];
+		                l.delta[obj_index] = 1 - l.output[obj_index];
+
+						int class_index = entry_index(l, b, mask_n*l.w*l.h + j*l.w + i, 4 + 1);
+		                delta_yolo_class(l.output, l.delta, class_index, true_class_id, l.classes, l.w*l.h, &avg_cat, l.focal_loss);
+
+				        ++count;
+		                ++class_count;
+		                if(iou > .5) recall += 1;
+		                if(iou > .75) recall75 += 1;
+		                avg_iou += iou;
+						/*
+						printf("TP final_score %2.4f\n", final_score);
+						tp_cnt ++;
+						//getchar();
+						*/
+					}else{
+						/*
+						printf("FP_mask_mismatch %2.4f\n", final_score);
+						//getchar();
+						fp_cnt ++;
+						fp_mask_mismatch_cnt++;
+						*/
+					}
+				}//for t
+		    }//for w
+        }//for h
+    }//for b
+	/*
+	printf("l.b : %d, l.h : %d, l.w : %d, l.n : %d, FP : %d, fp_mast : %d, ignore : %d, TP : %d\n", l.batch, l.h, l.w, l.n, fp_cnt, fp_mask_mismatch_cnt, ignore_cnt, tp_cnt);
+	getchar();
+	*/
     *(l.cost) = pow(mag_array(l.delta, l.outputs * l.batch), 2);
     printf("Region %d Avg IOU: %f, Class: %f, Obj: %f, No Obj: %f, .5R: %f, .75R: %f,  count: %d\n", state.index, avg_iou/count, avg_cat/class_count, avg_obj/count, avg_anyobj/(l.w*l.h*l.n*l.batch), recall/count, recall75/count, count);
 }
