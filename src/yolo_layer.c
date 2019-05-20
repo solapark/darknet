@@ -40,7 +40,12 @@ layer make_yolo_layer(int batch, int w, int h, int n, int total, int *mask, int 
     l.outputs = h*w*n*(classes + 4 + 1);
     l.inputs = l.outputs;
     l.max_boxes = max_boxes;
-    l.truths = l.max_boxes*(4 + 1);    // 90*(4 + 1);
+
+	if(pseudo_train){
+	    l.truths = l.max_boxes*(4 + 1 + 1);    // 90*(4 + 1 + 1);
+	}else{
+	    l.truths = l.max_boxes*(4 + 1);    // 90*(4 + 1);
+	}
     l.delta = (float*)calloc(batch * l.outputs, sizeof(float));
     l.output = (float*)calloc(batch * l.outputs, sizeof(float));
     for(i = 0; i < total*2; ++i){
@@ -346,6 +351,133 @@ void forward_yolo_layer_pseudo(const layer l, network_state state)
     float avg_anyobj = 0;
     int count = 0;
     int class_count = 0;
+    *(l.cost) = 0;
+    for (b = 0; b < l.batch; ++b) {
+        for (j = 0; j < l.h; ++j) {
+            for (i = 0; i < l.w; ++i) {
+                for (n = 0; n < l.n; ++n) {
+                    int box_index = entry_index(l, b, n*l.w*l.h + j*l.w + i, 0);
+                    box pred = get_yolo_box(l.output, l.biases, l.mask[n], box_index, i, j, l.w, l.h, state.net.w, state.net.h, l.w*l.h);
+                    float best_iou = 0;
+                    int best_t = 0;
+                    for(t = 0; t < l.max_boxes; ++t){
+                        //box truth = float_to_box_stride(state.truth + t*(4 + 1) + b*l.truths, 1);
+                        box truth = float_to_box_stride(state.truth + t*(4 + 1 + 1) + b*l.truths, 1);
+                        //int class_id = state.truth[t*(4 + 1) + b*l.truths + 4];
+                        int class_id = state.truth[t*(4 + 1 + 1) + b*l.truths + 4];
+                        if (class_id >= l.classes) {
+                            printf(" Warning: in txt-labels class_id=%d >= classes=%d in cfg-file. In txt-labels class_id should be [from 0 to %d] \n", class_id, l.classes, l.classes - 1);
+                            getchar();
+                            continue; // if label contains class_id more than number of classes in the cfg-file
+                        }
+                        if(!truth.x) break;  // continue;
+                        float iou = box_iou(pred, truth);
+                        if (iou > best_iou) {
+                            best_iou = iou;
+                            best_t = t;
+                        }
+                    }
+                    int obj_index = entry_index(l, b, n*l.w*l.h + j*l.w + i, 4);
+                    avg_anyobj += l.output[obj_index];
+                    l.delta[obj_index] = 0 - l.output[obj_index];
+                    if (best_iou > l.ignore_thresh) {
+                        l.delta[obj_index] = 0;
+                    }
+                    if (best_iou > l.truth_thresh) {
+                        l.delta[obj_index] = 1 - l.output[obj_index];
+
+                        //int class_id = state.truth[best_t*(4 + 1) + b*l.truths + 4];
+                        int class_id = state.truth[best_t*(4 + 1 + 1) + b*l.truths + 4];
+                        if (l.map) class_id = l.map[class_id];
+                        int class_index = entry_index(l, b, n*l.w*l.h + j*l.w + i, 4 + 1);
+                        delta_yolo_class(l.output, l.delta, class_index, class_id, l.classes, l.w*l.h, 0, l.focal_loss);
+                        //box truth = float_to_box_stride(state.truth + best_t*(4 + 1) + b*l.truths, 1);
+                        box truth = float_to_box_stride(state.truth + best_t*(4 + 1 + 1) + b*l.truths, 1);
+                        delta_yolo_box(truth, l.output, l.biases, l.mask[n], box_index, i, j, l.w, l.h, state.net.w, state.net.h, l.delta, (2-truth.w*truth.h), l.w*l.h);
+                    }
+                }
+            }
+        }
+        for(t = 0; t < l.max_boxes; ++t){
+			getchar();
+           //box truth = float_to_box_stride(state.truth + t*(4 + 1) + b*l.truths, 1);
+            box truth = float_to_box_stride(state.truth + t*(4 + 1 + 1) + b*l.truths, 1);
+            //int class_id = state.truth[t*(4 + 1) + b*l.truths + 4];
+            int class_id = state.truth[t*(4 + 1 + 1) + b*l.truths + 4];
+            if (class_id >= l.classes) continue; // if label contains class_id more than number of classes in the cfg-file
+
+			//printf("ignore lb : %f, ignore up : %f\n", l.ignore_lb, l.ignore_ub);
+			//printf("truth.x : %f, truth.y : %f, truth.w : %f, truth.h : %f\n", truth.x, truth.y, truth.w, truth.h);
+            if(!truth.x) break;  // continue;
+            float truth_prob = state.truth[t*(4 + 1 + 1) + b*l.truths + 5];
+			if (truth_prob < l.ignore_lb){
+				//printf("t : %d, FP, truth_prob = %f\n", t, truth_prob);
+				continue;
+			}
+            float best_iou = 0;
+            int best_n = 0;
+            i = (truth.x * l.w);
+            j = (truth.y * l.h);
+            box truth_shift = truth;
+            truth_shift.x = truth_shift.y = 0;
+            for(n = 0; n < l.total; ++n){
+                box pred = {0};
+                pred.w = l.biases[2*n]/ state.net.w;
+                pred.h = l.biases[2*n+1]/ state.net.h;
+                float iou = box_iou(pred, truth_shift);
+                if (iou > best_iou){
+                    best_iou = iou;
+                    best_n = n;
+                }
+            }
+
+            int mask_n = int_index(l.mask, best_n, l.n);
+            if(mask_n >= 0){
+                int obj_index = entry_index(l, b, mask_n*l.w*l.h + j*l.w + i, 4);
+				if (l.ignore_lb <= truth_prob && truth_prob < l.ignore_ub){
+					//printf("t : %d, ignore, truth_prob = %f\n", t, truth_prob);
+					l.delta[obj_index] = 0;
+					continue;
+				}
+				//printf("t : %d, TP, truth_prob = %f\n", t, truth_prob);
+                avg_obj += l.output[obj_index];
+
+                int box_index = entry_index(l, b, mask_n*l.w*l.h + j*l.w + i, 0);
+                float iou = delta_yolo_box(truth, l.output, l.biases, best_n, box_index, i, j, l.w, l.h, state.net.w, state.net.h, l.delta, (2-truth.w*truth.h), l.w*l.h);
+
+                //int class_id = state.truth[t*(4 + 1) + b*l.truths + 4];
+                int class_id = state.truth[t*(4 + 1 + 1) + b*l.truths + 4];
+                if (l.map) class_id = l.map[class_id];
+                int class_index = entry_index(l, b, mask_n*l.w*l.h + j*l.w + i, 4 + 1);
+                delta_yolo_class(l.output, l.delta, class_index, class_id, l.classes, l.w*l.h, &avg_cat, l.focal_loss);
+
+                ++count;
+                ++class_count;
+                if(iou > .5) recall += 1;
+                if(iou > .75) recall75 += 1;
+                avg_iou += iou;
+            }else{
+			//	printf("not this layer's mask\n");
+			}
+        }
+    }
+    *(l.cost) = pow(mag_array(l.delta, l.outputs * l.batch), 2);
+    printf("Region %d Avg IOU: %f, Class: %f, Obj: %f, No Obj: %f, .5R: %f, .75R: %f,  count: %d\n", state.index, avg_iou/count, avg_cat/class_count, avg_obj/count, avg_anyobj/(l.w*l.h*l.n*l.batch), recall/count, recall75/count, count);
+}
+
+/*
+void forward_yolo_layer_pseudo(const layer l, network_state state)
+{
+    int i,j,b,t,n;
+	
+    float avg_iou = 0;
+    float recall = 0;
+    float recall75 = 0;
+    float avg_cat = 0;
+    float avg_obj = 0;
+    float avg_anyobj = 0;
+    int count = 0;
+    int class_count = 0;
     int *anchor_inds = (int *)calloc(l.n, sizeof(int));
     for (int i = 0; i < l.n; ++i) {
         anchor_inds[i] = i;
@@ -361,27 +493,21 @@ void forward_yolo_layer_pseudo(const layer l, network_state state)
         for (j = 0; j < l.h; ++j) {
             for (i = 0; i < l.w; ++i) {
 				shuffle(anchor_inds, l.n, sizeof(int));
-				/*
 				printf("anchor inds");
 				for(int p = 0; p < l.n; ++p){
 					printf(" %d", anchor_inds[p]);
 				}
 				printf("\n");
-				*/
                 for (t = 0; t < l.n; ++t) {
 					n = anchor_inds[t];
                     int obj_index = entry_index(l, b, n*l.w*l.h + j*l.w + i, 4);
                     avg_anyobj += l.output[obj_index];
 					l.delta[obj_index] = 0 - l.output[obj_index];
 
-					/*
 					printf("b : %d, h : %d, w : %d, t : %d, n : %d, objness : %2.4f\n", b, j, i, t, n, l.output[obj_index]);
-					*/
                     if (l.output[obj_index] < l.ignore_lb) {
-						/*
 						printf("FP_objness\n");
 						fp_cnt ++;
-						*/
 						continue;
 					}
 
@@ -399,19 +525,15 @@ void forward_yolo_layer_pseudo(const layer l, network_state state)
 					float final_score = l.output[obj_index] * class_score;
 					if(final_score < l.ignore_lb){
 						l.delta[obj_index] = 0 - l.output[obj_index];
-						/*
 						printf("FP_final_score\n");
 						fp_cnt ++;
-						*/
 						continue;
 					}
 					if( l.ignore_lb< final_score && final_score < l.ignore_ub){
 						l.delta[obj_index] = 0;
-						/*
 						printf("ignore %2.4f\n", final_score);
 						//getchar();
 						ignore_cnt ++;
-						*/
 						continue;
 					}
 
@@ -450,30 +572,25 @@ void forward_yolo_layer_pseudo(const layer l, network_state state)
 		                if(iou > .5) recall += 1;
 		                if(iou > .75) recall75 += 1;
 		                avg_iou += iou;
-						/*
 						printf("TP final_score %2.4f\n", final_score);
 						tp_cnt ++;
 						//getchar();
-						*/
 					}else{
-						/*
 						printf("FP_mask_mismatch %2.4f\n", final_score);
 						//getchar();
 						fp_cnt ++;
 						fp_mask_mismatch_cnt++;
-						*/
 					}
 				}//for t
 		    }//for w
         }//for h
     }//for b
-	/*
 	printf("l.b : %d, l.h : %d, l.w : %d, l.n : %d, FP : %d, fp_mast : %d, ignore : %d, TP : %d\n", l.batch, l.h, l.w, l.n, fp_cnt, fp_mask_mismatch_cnt, ignore_cnt, tp_cnt);
 	getchar();
-	*/
     *(l.cost) = pow(mag_array(l.delta, l.outputs * l.batch), 2);
     printf("Region %d Avg IOU: %f, Class: %f, Obj: %f, No Obj: %f, .5R: %f, .75R: %f,  count: %d\n", state.index, avg_iou/count, avg_cat/class_count, avg_obj/count, avg_anyobj/(l.w*l.h*l.n*l.batch), recall/count, recall75/count, count);
 }
+*/
 
 void backward_yolo_layer(const layer l, network_state state)
 {
