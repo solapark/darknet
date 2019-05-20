@@ -598,6 +598,8 @@ typedef struct network {
     float *cost;
     float clip;
 
+    int pseudo_train;
+
 #ifdef GPU
     //float *input_gpu;
     //float *truth_gpu;
@@ -728,6 +730,7 @@ typedef struct load_args {
     image *resized;
     data_type type;
     tree *hierarchy;
+	int pseudo_train;
 } load_args;
 
 // data.h
@@ -735,6 +738,7 @@ typedef struct box_label {
     int id;
     float x, y, w, h;
     float left, right, top, bottom;
+	float prob;
 } box_label;
 
 // list.h

@@ -209,6 +209,45 @@ box_label *read_boxes(char *filename, int *n)
     return boxes;
 }
 
+box_label *read_boxes_pseudo(char *filename, int *n)
+{
+    box_label* boxes = (box_label*)calloc(1, sizeof(box_label));
+    FILE *file = fopen(filename, "r");
+    if (!file) {
+        printf("Can't open label file. (This can be normal only if you use MSCOCO): %s \n", filename);
+        //file_error(filename);
+        FILE* fw = fopen("bad.list", "a");
+        fwrite(filename, sizeof(char), strlen(filename), fw);
+        char *new_line = "\n";
+        fwrite(new_line, sizeof(char), strlen(new_line), fw);
+        fclose(fw);
+        if (check_mistakes) getchar();
+
+        *n = 0;
+        return boxes;
+    }
+    float x, y, h, w;
+    int id;
+	float prob;
+    int count = 0;
+    while(fscanf(file, "%d %f %f %f %f %f", &id, &x, &y, &w, &h, &prob) == 6){
+        boxes = (box_label*)realloc(boxes, (count + 1) * sizeof(box_label));
+        boxes[count].id = id;
+        boxes[count].x = x;
+        boxes[count].y = y;
+        boxes[count].h = h;
+        boxes[count].w = w;
+        boxes[count].left   = x - w/2;
+        boxes[count].right  = x + w/2;
+        boxes[count].top    = y - h/2;
+        boxes[count].bottom = y + h/2;
+        boxes[count].prob = prob;
+        ++count;
+    }
+    fclose(file);
+    *n = count;
+    return boxes;
+}
 void randomize_boxes(box_label *b, int n)
 {
     int i;
@@ -335,14 +374,20 @@ void fill_truth_region(char *path, float *truth, int classes, int num_boxes, int
 }
 
 void fill_truth_detection(const char *path, int num_boxes, float *truth, int classes, int flip, float dx, float dy, float sx, float sy,
-    int net_w, int net_h)
+    int net_w, int net_h, int is_pseudo_train)
 {
     char labelpath[4096];
     replace_image_to_label(path, labelpath);
 
     int count = 0;
     int i;
-    box_label *boxes = read_boxes(labelpath, &count);
+
+	box_label *boxes;
+	if(is_pseudo_train){
+		boxes = read_boxes_pseudo(labelpath, &count);
+	}else{
+		boxes = read_boxes(labelpath, &count);
+	}
     float lowest_w = 1.F / net_w;
     float lowest_h = 1.F / net_h;
     randomize_boxes(boxes, count);
@@ -350,6 +395,7 @@ void fill_truth_detection(const char *path, int num_boxes, float *truth, int cla
     if (count > num_boxes) count = num_boxes;
     float x, y, w, h;
     int id;
+	float prob;
     int sub = 0;
 
     for (i = 0; i < count; ++i) {
@@ -358,6 +404,9 @@ void fill_truth_detection(const char *path, int num_boxes, float *truth, int cla
         w = boxes[i].w;
         h = boxes[i].h;
         id = boxes[i].id;
+		if(is_pseudo_train){
+			prob = boxes[i].prob;
+		}
 
         // not detect small objects
         //if ((w < 0.001F || h < 0.001F)) continue;
@@ -409,12 +458,21 @@ void fill_truth_detection(const char *path, int num_boxes, float *truth, int cla
         }
         if (x == 0) x += lowest_w;
         if (y == 0) y += lowest_h;
-
-        truth[(i-sub)*5+0] = x;
-        truth[(i-sub)*5+1] = y;
-        truth[(i-sub)*5+2] = w;
-        truth[(i-sub)*5+3] = h;
-        truth[(i-sub)*5+4] = id;
+	
+		if(is_pseudo_train){
+	        truth[(i-sub)*6+0] = x;
+	        truth[(i-sub)*6+1] = y;
+	        truth[(i-sub)*6+2] = w;
+	        truth[(i-sub)*6+3] = h;
+	        truth[(i-sub)*6+4] = id;
+	        truth[(i-sub)*6+5] = prob;
+		}else{
+	        truth[(i-sub)*5+0] = x;
+	        truth[(i-sub)*5+1] = y;
+	        truth[(i-sub)*5+2] = w;
+	        truth[(i-sub)*5+3] = h;
+	        truth[(i-sub)*5+4] = id;
+		}
     }
     free(boxes);
 }
@@ -770,7 +828,8 @@ static box float_to_box_stride(float *f, int stride)
 #include "http_stream.h"
 
 data load_data_detection(int n, char **paths, int m, int w, int h, int c, int boxes, int classes, int use_flip, float jitter,
-    float hue, float saturation, float exposure, int mini_batch, int track, int augment_speed, int show_imgs)
+    //float hue, float saturation, float exposure, int mini_batch, int track, int augment_speed, int show_imgs)
+    float hue, float saturation, float exposure, int mini_batch, int track, int augment_speed, int show_imgs, int is_pseudo_train)
 {
     c = c ? c : 3;
     char **random_paths;
@@ -788,7 +847,12 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int c, int bo
     float dhue = 0, dsat = 0, dexp = 0, flip = 0;
     int augmentation_calculated = 0;
 
-    d.y = make_matrix(n, 5*boxes);
+	if(is_pseudo_train){
+		d.y = make_matrix(n, 6 * boxes);
+	}else{
+		d.y = make_matrix(n, 5 * boxes);
+	}
+
     for(i = 0; i < n; ++i){
         const char *filename = random_paths[i];
 
@@ -838,7 +902,7 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int c, int bo
         image ai = image_data_augmentation(src, w, h, pleft, ptop, swidth, sheight, flip, jitter, dhue, dsat, dexp);
         d.X.vals[i] = ai.data;
 
-        fill_truth_detection(filename, boxes, d.y.vals[i], classes, flip, dx, dy, 1./sx, 1./sy, w, h);
+        fill_truth_detection(filename, boxes, d.y.vals[i], classes, flip, dx, dy, 1./sx, 1./sy, w, h, is_pseudo_train);
 
         if(show_imgs)
         {
@@ -869,8 +933,8 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int c, int bo
     return d;
 }
 #else    // OPENCV
-data load_data_detection(int n, char **paths, int m, int w, int h, int c, int boxes, int classes, int use_flip, float jitter,
-    float hue, float saturation, float exposure, int mini_batch, int track, int augment_speed, int show_imgs)
+//data load_data_detection(int n, char **paths, int m, int w, int h, int c, int boxes, int classes, int use_flip, float jitter,float hue, float saturation, float exposure, int mini_batch, int track, int augment_speed, int show_imgs)
+data load_data_detection(int n, char **paths, int m, int w, int h, int c, int boxes, int classes, int use_flip, float jitter,float hue, float saturation, float exposure, int mini_batch, int track, int augment_speed, int show_imgs, int is_pseudo_train)
 {
     c = c ? c : 3;
     char **random_paths;
@@ -888,7 +952,12 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int c, int bo
     float dhue = 0, dsat = 0, dexp = 0, flip = 0;
     int augmentation_calculated = 0;
 
-    d.y = make_matrix(n, 5 * boxes);
+	if(is_pseudo_train){
+		d.y = make_matrix(n, 6 * boxes);
+	else{
+		d.y = make_matrix(n, 5 * boxes);
+	}
+
     for (i = 0; i < n; ++i) {
         image orig = load_image(random_paths[i], 0, 0, c);
 
@@ -935,7 +1004,7 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int c, int bo
         //random_distort_image(sized, hue, saturation, exposure);
         d.X.vals[i] = sized.data;
 
-        fill_truth_detection(random_paths[i], boxes, d.y.vals[i], classes, flip, dx, dy, 1. / sx, 1. / sy, w, h);
+        fill_truth_detection(random_paths[i], boxes, d.y.vals[i], classes, flip, dx, dy, 1. / sx, 1. / sy, w, h, is_pseudo_train);
 
         if(show_imgs)
         {
@@ -990,7 +1059,8 @@ void *load_thread(void *ptr)
         *a.d = load_data_region(a.n, a.paths, a.m, a.w, a.h, a.num_boxes, a.classes, a.jitter, a.hue, a.saturation, a.exposure);
     } else if (a.type == DETECTION_DATA){
         *a.d = load_data_detection(a.n, a.paths, a.m, a.w, a.h, a.c, a.num_boxes, a.classes, a.flip, a.jitter,
-            a.hue, a.saturation, a.exposure, a.mini_batch, a.track, a.augment_speed, a.show_imgs);
+            //a.hue, a.saturation, a.exposure, a.mini_batch, a.track, a.augment_speed, a.show_imgs);
+            a.hue, a.saturation, a.exposure, a.mini_batch, a.track, a.augment_speed, a.show_imgs, a.pseudo_train);
     } else if (a.type == SWAG_DATA){
         *a.d = load_data_swag(a.paths, a.n, a.classes, a.jitter);
     } else if (a.type == COMPARE_DATA){

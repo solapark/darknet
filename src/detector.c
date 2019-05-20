@@ -125,6 +125,8 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     if (dont_show && show_imgs) show_imgs = 2;
     args.show_imgs = show_imgs;
 
+    args.pseudo_train = net.pseudo_train;
+
 #ifdef OPENCV
     args.threads = 3 * ngpus;   // Amazon EC2 Tesla V100: p3.2xlarge (8 logical cores) - p3.16xlarge
     //args.threads = 12 * ngpus;    // Ryzen 7 2700X (16 logical cores)
@@ -268,7 +270,8 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
 
         //if (i % 1000 == 0 || (i < 1000 && i % 100 == 0)) {
         //if (i % 100 == 0) {
-        if (i >= (iter_save + 1000) || i % 1000 == 0) {
+        //if (i >= (iter_save + 1000) || i % 1000 == 0) {
+        if (i >= (iter_save_last + 100) || i % 100 == 0) {
             iter_save = i;
 #ifdef GPU
             if (ngpus != 1) sync_nets(nets, ngpus, 0);
@@ -1337,6 +1340,7 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
                 }
                 if (class_id >= 0) {
                     sprintf(buff, "%d %2.4f %2.4f %2.4f %2.4f\n", class_id, dets[i].bbox.x, dets[i].bbox.y, dets[i].bbox.w, dets[i].bbox.h);
+                    //sprintf(buff, "%d %2.4f %2.4f %2.4f %2.4f prob %2.4f\n", class_id, dets[i].bbox.x, dets[i].bbox.y, dets[i].bbox.w, dets[i].bbox.h, prob);
                     fwrite(buff, sizeof(char), strlen(buff), fw);
                 }
             }
