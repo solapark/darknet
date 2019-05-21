@@ -336,8 +336,8 @@ float train_network_waitkey(network net, data d, int wait_key)
     float* X = (float*)calloc(batch * d.X.cols, sizeof(float));
     float* y = (float*)calloc(batch * d.y.cols, sizeof(float));
 
-	printf("batch : %d, d.X.rows : %d, n : %d , X size : %d, Y size : %d\n", batch, d.X.rows, n, batch*d.X.cols, batch*d.y.cols);
-	printf("d.X.cols : %d, d.y.cols : %d\n", d.X.cols, d.y.cols);
+	//printf("batch : %d, d.X.rows : %d, n : %d , X size : %d, Y size : %d\n", batch, d.X.rows, n, batch*d.X.cols, batch*d.y.cols);
+	//printf("d.X.cols : %d, d.y.cols : %d\n", d.X.cols, d.y.cols);
 
     int i;
     float sum = 0;

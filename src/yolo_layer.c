@@ -399,7 +399,7 @@ void forward_yolo_layer_pseudo(const layer l, network_state state)
             }
         }
         for(t = 0; t < l.max_boxes; ++t){
-			getchar();
+			//getchar();
            //box truth = float_to_box_stride(state.truth + t*(4 + 1) + b*l.truths, 1);
             box truth = float_to_box_stride(state.truth + t*(4 + 1 + 1) + b*l.truths, 1);
             //int class_id = state.truth[t*(4 + 1) + b*l.truths + 4];
@@ -441,6 +441,7 @@ void forward_yolo_layer_pseudo(const layer l, network_state state)
 				}
 				//printf("t : %d, TP, truth_prob = %f\n", t, truth_prob);
                 avg_obj += l.output[obj_index];
+                l.delta[obj_index] = 1 - l.output[obj_index];
 
                 int box_index = entry_index(l, b, mask_n*l.w*l.h + j*l.w + i, 0);
                 float iou = delta_yolo_box(truth, l.output, l.biases, best_n, box_index, i, j, l.w, l.h, state.net.w, state.net.h, l.delta, (2-truth.w*truth.h), l.w*l.h);
