@@ -343,8 +343,9 @@ float train_network_waitkey(network net, data d, int wait_key)
     float sum = 0;
     for(i = 0; i < n; ++i){
         get_next_batch(d, batch, i*batch, X, y);
+		//for(int k = 0 ; k < batch * d.y.cols; k=k+6){
 		/*
-		for(int k = 0 ; k < batch * d.y.cols; k=k+6){
+		for(int k = 0 ; k < 30; k=k+6){
 			//if(y[k]<0) break;
 			printf("i: %d, box : %f %f %f %f, id : %f, prob : %f\n",k/6, y[k], y[k+1], y[k+2], y[k+3], y[k+4], y[k+5]);
 		} 

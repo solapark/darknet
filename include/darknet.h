@@ -605,6 +605,7 @@ typedef struct network {
 	float ignore_ub;
 	float ignore_lb_change;
 	float ignore_ub_change;
+	int generate_first_label;
 
 #ifdef GPU
     //float *input_gpu;
@@ -792,6 +793,7 @@ LIB_API void reset_rnn(network *net);
 LIB_API float *network_predict_image(network *net, image im);
 LIB_API float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, float thresh_calc_avg_iou, const float iou_thresh, const int map_points, network *existing_net);
 LIB_API void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, int ngpus, int clear, int dont_show, int calc_map, int mjpeg_port, int show_imgs);
+LIB_API void gen_pseudo_label(char *datacfg, char *cfgfile, char *weightfile, char **filenames, float thresh, float hier_thresh, int dont_show, int ext_output, int save_labels, char *outfile, int train_images_num);
 LIB_API void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh,
     float hier_thresh, int dont_show, int ext_output, int save_labels, char *outfile);
 LIB_API int network_width(network *net);

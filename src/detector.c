@@ -50,12 +50,14 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     }
 
     srand(time(0));
+    //srand(seed_num);
     char *base = basecfg(cfgfile);
     printf("%s\n", base);
     float avg_loss = -1;
     network* nets = (network*)calloc(ngpus, sizeof(network));
 
     srand(time(0));
+    //srand(seed_num);
     int seed = rand();
     int i;
     for (i = 0; i < ngpus; ++i) {
@@ -71,6 +73,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
         nets[i].learning_rate *= ngpus;
     }
     srand(time(0));
+    //srand(seed_num);
     network net = nets[0];
 
     const int actual_batch_size = net.batch * net.subdivisions;
@@ -108,10 +111,16 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
 		printf("pseudo_train\n");
 		pseudo_update_for_each = net.pseudo_update_epoch * train_images_num / (net.batch * net.subdivisions);  // pseudo_update_for_each each x Epochs
 		iter_pseudo_update = get_current_batch(net) + pseudo_update_for_each;
+		//iter_pseudo_update = 0;
 		pseudo_update_cnt = 0;
 		for (int p = 0; p < ngpus; p++) {
 			modify_yolo_layer(&nets[p]);
 		}
+		if(net.generate_first_label){
+			gen_pseudo_label(datacfg, cfgfile, weightfile, paths, net.ignore_lb, 0.5, 1, 0, 1, 0, train_images_num);
+		}
+		//printf("net.pseudo_update_epoch : %d, train_images_num : %d, net.batch : %d, net.subdivisions : %d, get_current_batch(net) : %d\n", net.pseudo_update_epoch, train_images_num, net.batch, net.subdivisions, get_current_batch(net));
+		printf("1st generation of pseudo label : %d\n", iter_pseudo_update);
 	}
  
     load_args args = { 0 };
@@ -172,13 +181,11 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
 			for (int p = 0; p < ngpus; p++) {
 				update_yolo_layer_lb_ub(&(nets[p]));
 			}
-			//void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh, float hier_thresh, int dont_show, int ext_output, int save_labels, char *outfile)
-			for ( int p = 0 ; p < train_images_num ; p++){
-				test_detector(datacfg, cfgfile, buff, paths[p], net.ignore_lb, 0.5, 1, 0, 1, 0);
-			}
-			
+			gen_pseudo_label(datacfg, cfgfile, buff, paths, net.ignore_lb, 0.5, 1, 0, 1, 0, train_images_num);
+
 			//update variable 
 			iter_pseudo_update =get_current_batch(net) +  pseudo_update_for_each;
+			printf("next generation of pseudo label : %d\n", iter_pseudo_update);
 
 			//remove previous load data
             pthread_join(load_thread, 0);
@@ -1267,6 +1274,95 @@ void calc_anchors(char *datacfg, int num_of_clusters, int width, int height, int
     getchar();
 }
 
+void gen_pseudo_label(char *datacfg, char *cfgfile, char *weightfile, char **filenames, float thresh, float hier_thresh, int dont_show, int ext_output, int save_labels, char *outfile, int train_images_num)
+{
+    list *options = read_data_cfg(datacfg);
+    char *name_list = option_find_str(options, "names", "data/names.list");
+    int names_size = 0;
+    char **names = get_labels_custom(name_list, &names_size); //get_labels(name_list);
+
+    image **alphabet = load_alphabet();
+    network net = parse_network_cfg_custom(cfgfile, 1, 1); // set batch=1
+    if (weightfile) {
+        load_weights(&net, weightfile);
+    }
+    fuse_conv_batchnorm(net);
+    calculate_binary_weights(net);
+    if (net.layers[net.n - 1].classes != names_size) {
+        printf(" Error: in the file %s number of names %d that isn't equal to classes=%d in the file %s \n",
+            name_list, names_size, net.layers[net.n - 1].classes, cfgfile);
+        if (net.layers[net.n - 1].classes > names_size) getchar();
+    }
+    srand(2222222);
+    char buff[256];
+    char *input = buff;
+    int j;
+    float nms = .45;    // 0.4F
+	printf("thresh : %f\n", thresh);
+	for ( int p = 0 ; p < train_images_num ; p++){
+        strncpy(input, filenames[p], 256);
+        if (strlen(input) > 0)
+			if (input[strlen(input) - 1] == 0x0d) input[strlen(input) - 1] = 0;
+	
+        image im = load_image(input, 0, 0, net.c);
+        image sized = resize_image(im, net.w, net.h);
+        int letterbox = 0;
+        layer l = net.layers[net.n - 1];
+
+        float *X = sized.data;
+        network_predict(net, X);
+        int nboxes = 0;
+        detection *dets = get_network_boxes(&net, im.w, im.h, thresh, hier_thresh, 0, 1, &nboxes, letterbox);
+        if (nms) do_nms_sort(dets, nboxes, l.classes, nms);
+
+        // pseudo labeling concept - fast.ai
+        if (save_labels)
+        {
+            char labelpath[4096];
+            replace_image_to_label(input, labelpath);
+
+            FILE* fw = fopen(labelpath, "wb");
+            int i;
+            for (i = 0; i < nboxes; ++i) {
+                char buff[1024];
+                int class_id = -1;
+                float prob = 0;
+                for (j = 0; j < l.classes; ++j) {
+                    if (dets[i].prob[j] > thresh && dets[i].prob[j] > prob) {
+                        prob = dets[i].prob[j];
+                        class_id = j;
+                    }
+                }
+                if (class_id >= 0) {
+                    sprintf(buff, "%d %2.4f %2.4f %2.4f %2.4f %2.4f\n", class_id, dets[i].bbox.x, dets[i].bbox.y, dets[i].bbox.w, dets[i].bbox.h, prob);
+                    fwrite(buff, sizeof(char), strlen(buff), fw);
+                }
+            }
+            fclose(fw);
+		}
+        free_detections(dets, nboxes);
+        free_image(im);
+        free_image(sized);
+		if(p%100==0) printf("gen pseudo label %d/%d DONE\n", p+1, train_images_num);
+    }
+
+    // free memory
+    free_ptrs((void**)names, net.layers[net.n - 1].classes);
+    free_list_contents_kvp(options);
+    free_list(options);
+
+    int i;
+    const int nsize = 8;
+    for (j = 0; j < nsize; ++j) {
+        for (i = 32; i < 127; ++i) {
+            free_image(alphabet[j][i]);
+        }
+        free(alphabet[j]);
+    }
+    free(alphabet);
+
+    free_network(net);
+}
 
 void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh,
     float hier_thresh, int dont_show, int ext_output, int save_labels, char *outfile)
@@ -1514,7 +1610,7 @@ void modify_yolo_layer(network* net){
 			l->ignore_lb = net->ignore_lb;
 			l->ignore_ub = net->ignore_ub;
 			l->truths = l->max_boxes*(4 + 1 + 1);    // 90*(4 + 1 + 1);
-			printf("l.pseudo_train : %d, l.ignore_lb : %f, l.ignore_ub : %f, l.truths : %d\n",l->pseudo_train, l->ignore_lb, l->ignore_ub, l->truths);
+			//printf("l.pseudo_train : %d, l.ignore_lb : %f, l.ignore_ub : %f, l.truths : %d\n",l->pseudo_train, l->ignore_lb, l->ignore_ub, l->truths);
 		}
 	}
 }

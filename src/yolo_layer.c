@@ -71,7 +71,8 @@ layer make_yolo_layer(int batch, int w, int h, int n, int total, int *mask, int 
 #endif
 	
     fprintf(stderr, "yolo\n");
-    srand(time(0));
+    //srand(time(0));
+    srand(30);
 
     return l;
 }
@@ -396,6 +397,7 @@ void forward_yolo_layer_pseudo(const layer l, network_state state)
 			//getchar();
            //box truth = float_to_box_stride(state.truth + t*(4 + 1) + b*l.truths, 1);
             box truth = float_to_box_stride(state.truth + t*(4 + 1 + 1) + b*l.truths, 1);
+			//printf("truth: x %f, y %f, w %f, h %f\n", truth.x, truth.y, truth.w, truth.h);
             //int class_id = state.truth[t*(4 + 1) + b*l.truths + 4];
             int class_id = state.truth[t*(4 + 1 + 1) + b*l.truths + 4];
             if (class_id >= l.classes) continue; // if label contains class_id more than number of classes in the cfg-file

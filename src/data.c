@@ -89,6 +89,12 @@ char **get_random_paths(char **paths, int n, int m)
         } while (strlen(random_paths[i]) == 0);
     }
     pthread_mutex_unlock(&mutex);
+	/*
+	for(int i=0; i<n; ++i){
+	    printf("%s\n", random_paths[i]);
+	}
+	*/
+
     return random_paths;
 }
 
@@ -899,6 +905,7 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int c, int bo
         float dx = ((float)pleft/ow)/sx;
         float dy = ((float)ptop /oh)/sy;
 
+        //printf("%d, %d, %d, %d, %d, %f\n", pleft, ptop, swidth, sheight, flip, jitter);
         image ai = image_data_augmentation(src, w, h, pleft, ptop, swidth, sheight, flip, jitter, dhue, dsat, dexp);
         d.X.vals[i] = ai.data;
 
@@ -1107,6 +1114,14 @@ void *load_threads(void *ptr)
         pthread_join(threads[i], 0);
     }
     *out = concat_datas(buffers, args.threads);
+	/*
+	for(int k = 0 ; k < 30; k=k+6){
+		float* y = out->y.vals[0];
+		//if(y[k]<0) break;
+		printf("i: %d, box : %f %f %f %f, id : %f, prob : %f\n",k/6, y[k], y[k+1], y[k+2], y[k+3], y[k+4], y[k+5]);
+	} 
+	*/
+
     out->shallow = 0;
     for(i = 0; i < args.threads; ++i){
         buffers[i].shallow = 1;
