@@ -10,8 +10,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-//layer make_yolo_layer(int batch, int w, int h, int n, int total, int *mask, int classes, int max_boxes)
-layer make_yolo_layer(int batch, int w, int h, int n, int total, int *mask, int classes, int max_boxes, int pseudo_train, float ignore_lb, float ignore_ub)
+layer make_yolo_layer(int batch, int w, int h, int n, int total, int *mask, int classes, int max_boxes)
 {
     int i;
     layer l = { (LAYER_TYPE)0 };
@@ -41,11 +40,7 @@ layer make_yolo_layer(int batch, int w, int h, int n, int total, int *mask, int 
     l.inputs = l.outputs;
     l.max_boxes = max_boxes;
 
-	if(pseudo_train){
-	    l.truths = l.max_boxes*(4 + 1 + 1);    // 90*(4 + 1 + 1);
-	}else{
-	    l.truths = l.max_boxes*(4 + 1);    // 90*(4 + 1);
-	}
+	l.truths = l.max_boxes*(4 + 1);    // 90*(4 + 1);
     l.delta = (float*)calloc(batch * l.outputs, sizeof(float));
     l.output = (float*)calloc(batch * l.outputs, sizeof(float));
     for(i = 0; i < total*2; ++i){
@@ -75,10 +70,6 @@ layer make_yolo_layer(int batch, int w, int h, int n, int total, int *mask, int 
     }
 #endif
 	
-	l.pseudo_train = pseudo_train;
-	l.ignore_lb = ignore_lb;
-	l.ignore_ub = ignore_ub;
-
     fprintf(stderr, "yolo\n");
     srand(time(0));
 
@@ -237,6 +228,8 @@ void forward_yolo_layer(const layer l, network_state state)
 
 void forward_yolo_layer_original(const layer l, network_state state)
 {
+	//printf("forward_yolo_layer_original\n");
+	//printf("l.ignore_lb : %f\n", l.ignore_lb);
     int i,j,b,t,n;
 	
     float avg_iou = 0;
@@ -341,6 +334,7 @@ void forward_yolo_layer_original(const layer l, network_state state)
 
 void forward_yolo_layer_pseudo(const layer l, network_state state)
 {
+	//printf("forward_yolo_layer_pseudo\n");
     int i,j,b,t,n;
 	
     float avg_iou = 0;

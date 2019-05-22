@@ -598,7 +598,13 @@ typedef struct network {
     float *cost;
     float clip;
 
+	//pseudo_label
     int pseudo_train;
+	int pseudo_update_epoch;
+	float ignore_lb;
+	float ignore_ub;
+	float ignore_lb_change;
+	float ignore_ub_change;
 
 #ifdef GPU
     //float *input_gpu;

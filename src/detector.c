@@ -103,6 +103,17 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     iter_map = get_current_batch(net);
     float mean_average_precision = -1;
 
+    int pseudo_update_for_each, iter_pseudo_update, pseudo_update_cnt;
+	if(net.pseudo_train){
+		printf("pseudo_train\n");
+		pseudo_update_for_each = net.pseudo_update_epoch * train_images_num / (net.batch * net.subdivisions);  // pseudo_update_for_each each x Epochs
+		iter_pseudo_update = get_current_batch(net) + pseudo_update_for_each;
+		pseudo_update_cnt = 0;
+		for (int p = 0; p < ngpus; p++) {
+			modify_yolo_layer(&nets[p]);
+		}
+	}
+ 
     load_args args = { 0 };
     args.w = net.w;
     args.h = net.h;
@@ -150,6 +161,31 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     int count = 0;
     //while(i*imgs < N*120){
     while (get_current_batch(net) < net.max_batches) {
+		if (net.pseudo_update_epoch  && get_current_batch(net) >= iter_pseudo_update){
+			printf("pseudo_label update\n");
+			//save weights
+            char buff[256];
+            sprintf(buff, "%s/%s_%d_pseudo_update%d_lb_%2.2f_ub_%2.2f.weights", backup_directory, base, get_current_batch(net), pseudo_update_cnt++, net.ignore_lb, net.ignore_ub );
+            save_weights(net, buff);
+			
+			//generate new labels
+			for (int p = 0; p < ngpus; p++) {
+				update_yolo_layer_lb_ub(&(nets[p]));
+			}
+			//void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh, float hier_thresh, int dont_show, int ext_output, int save_labels, char *outfile)
+			for ( int p = 0 ; p < train_images_num ; p++){
+				test_detector(datacfg, cfgfile, buff, paths[p], net.ignore_lb, 0.5, 1, 0, 1, 0);
+			}
+			
+			//update variable 
+			iter_pseudo_update =get_current_batch(net) +  pseudo_update_for_each;
+
+			//remove previous load data
+            pthread_join(load_thread, 0);
+            train = buffer;
+            free_data(train);
+            load_thread = load_data(args);
+		}
         if (l.random && count++ % 10 == 0) {
             printf("Resizing\n");
             float random_val = rand_scale(1.4);    // *x or /x
@@ -1339,8 +1375,8 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
                     }
                 }
                 if (class_id >= 0) {
-                    sprintf(buff, "%d %2.4f %2.4f %2.4f %2.4f\n", class_id, dets[i].bbox.x, dets[i].bbox.y, dets[i].bbox.w, dets[i].bbox.h);
-                    //sprintf(buff, "%d %2.4f %2.4f %2.4f %2.4f prob %2.4f\n", class_id, dets[i].bbox.x, dets[i].bbox.y, dets[i].bbox.w, dets[i].bbox.h, prob);
+                    //sprintf(buff, "%d %2.4f %2.4f %2.4f %2.4f\n", class_id, dets[i].bbox.x, dets[i].bbox.y, dets[i].bbox.w, dets[i].bbox.h);
+                    sprintf(buff, "%d %2.4f %2.4f %2.4f %2.4f %2.4f\n", class_id, dets[i].bbox.x, dets[i].bbox.y, dets[i].bbox.w, dets[i].bbox.h, prob);
                     fwrite(buff, sizeof(char), strlen(buff), fw);
                 }
             }
@@ -1466,4 +1502,34 @@ void run_detector(int argc, char **argv)
         free_list(options);
     }
     else printf(" There isn't such command: %s", argv[2]);
+}
+
+void modify_yolo_layer(network* net){
+	printf("modify_yolo_layer. net.ignore_lb : %f, net.ignore_ub : %f\n", net->ignore_lb, net->ignore_ub);
+    int i;
+    for(i = 0; i < net->n; ++i){
+        layer* l = &(net->layers[i]);
+		if(l->type == YOLO){
+			l->pseudo_train = 1;
+			l->ignore_lb = net->ignore_lb;
+			l->ignore_ub = net->ignore_ub;
+			l->truths = l->max_boxes*(4 + 1 + 1);    // 90*(4 + 1 + 1);
+			printf("l.pseudo_train : %d, l.ignore_lb : %f, l.ignore_ub : %f, l.truths : %d\n",l->pseudo_train, l->ignore_lb, l->ignore_ub, l->truths);
+		}
+	}
+}
+
+void update_yolo_layer_lb_ub(network* net){
+	net->ignore_lb = net->ignore_lb + net->ignore_lb_change;
+	net->ignore_ub = net->ignore_ub + net->ignore_ub_change;
+	printf("update_yolo_layer_lb_ub. net.ignore_lb : %f, net.ignore_ub : %f\n", net->ignore_lb, net->ignore_ub);
+	
+    int i;
+    for(i = 0; i < net->n; ++i){
+        layer* l = &(net->layers[i]);
+		if(l->type == YOLO){
+			l->ignore_lb = net->ignore_lb;
+			l->ignore_ub = net->ignore_ub;
+		}
+	}
 }

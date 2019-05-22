@@ -296,11 +296,7 @@ layer parse_yolo(list *options, size_params params)
     char *a = option_find_str(options, "mask", 0);
     int *mask = parse_yolo_mask(a, &num);
     int max_boxes = option_find_int_quiet(options, "max", 90);
-	int pseudo_train = option_find_int(options, "pseudo_train", 0);
-	float ignore_lb = option_find_float(options, "ignore_lb", -1.0);
-	float ignore_ub = option_find_float(options, "ignore_ub", -1.0);
-    //layer l = make_yolo_layer(params.batch, params.w, params.h, num, total, mask, classes, max_boxes);
-    layer l = make_yolo_layer(params.batch, params.w, params.h, num, total, mask, classes, max_boxes, pseudo_train, ignore_lb, ignore_ub);
+    layer l = make_yolo_layer(params.batch, params.w, params.h, num, total, mask, classes, max_boxes);
     if (l.outputs != params.inputs) {
         printf("Error: l.outputs == params.inputs \n");
         printf("filters= in the [convolutional]-layer doesn't correspond to classes= or mask= in [yolo]-layer \n");
@@ -641,6 +637,15 @@ learning_rate_policy get_policy(char *s)
 
 void parse_net_options(list *options, network *net)
 {
+	//pseudo_label
+    net->pseudo_train = option_find_int(options, "pseudo_train",0);
+    net->pseudo_update_epoch = option_find_int(options, "pseudo_update_epoch",0);
+    net->ignore_lb = option_find_float(options, "ignore_lb", 0);
+    net->ignore_lb_change = option_find_float(options, "ignore_lb_change", 0);
+    net->ignore_ub = option_find_float(options, "ignore_ub", 0);
+    net->ignore_ub_change = option_find_float(options, "ignore_ub_change", 0);
+
+    net->learning_rate = option_find_float(options, "learning_rate", .001);
     net->batch = option_find_int(options, "batch",1);
     net->learning_rate = option_find_float(options, "learning_rate", .001);
     net->learning_rate_min = option_find_float_quiet(options, "learning_rate_min", .00001);
@@ -683,7 +688,6 @@ void parse_net_options(list *options, network *net)
     char *policy_s = option_find_str(options, "policy", "constant");
     net->policy = get_policy(policy_s);
     net->burn_in = option_find_int_quiet(options, "burn_in", 0);
-    net->pseudo_train = option_find_int(options, "pseudo_train", 0);
 #ifdef CUDNN_HALF
     if (net->gpu_index >= 0) {
         int compute_capability = get_gpu_compute_capability(net->gpu_index);
