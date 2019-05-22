@@ -110,8 +110,8 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
 	if(net.pseudo_train){
 		printf("pseudo_train\n");
 		pseudo_update_for_each = net.pseudo_update_epoch * train_images_num / (net.batch * net.subdivisions);  // pseudo_update_for_each each x Epochs
-		iter_pseudo_update = get_current_batch(net) + pseudo_update_for_each;
-		//iter_pseudo_update = 0;
+		//iter_pseudo_update = get_current_batch(net) + pseudo_update_for_each;
+		iter_pseudo_update = 1;
 		pseudo_update_cnt = 0;
 		for (int p = 0; p < ngpus; p++) {
 			modify_yolo_layer(&nets[p]);
@@ -174,14 +174,14 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
 			printf("pseudo_label update\n");
 			//save weights
             char buff[256];
-            sprintf(buff, "%s/%s_%d_pseudo_update%d_lb_%2.2f_ub_%2.2f.weights", backup_directory, base, get_current_batch(net), pseudo_update_cnt++, net.ignore_lb, net.ignore_ub );
+            sprintf(buff, "%s/%s_%d_pseudo_update%d_lb_%2.2f_ub_%2.2f.weights", backup_directory, base, get_current_batch(net), pseudo_update_cnt++, nets[0].ignore_lb, nets[0].ignore_ub );
             save_weights(net, buff);
 			
 			//generate new labels
 			for (int p = 0; p < ngpus; p++) {
 				update_yolo_layer_lb_ub(&(nets[p]));
 			}
-			gen_pseudo_label(datacfg, cfgfile, buff, paths, net.ignore_lb, 0.5, 1, 0, 1, 0, train_images_num);
+			gen_pseudo_label(datacfg, cfgfile, buff, paths, nets[0].ignore_lb, 0.5, 1, 0, 1, 0, train_images_num);
 
 			//update variable 
 			iter_pseudo_update =get_current_batch(net) +  pseudo_update_for_each;
