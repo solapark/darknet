@@ -110,8 +110,8 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
 	if(net.pseudo_train){
 		printf("pseudo_train\n");
 		pseudo_update_for_each = net.pseudo_update_epoch * train_images_num / (net.batch * net.subdivisions);  // pseudo_update_for_each each x Epochs
-		//iter_pseudo_update = get_current_batch(net) + pseudo_update_for_each;
-		iter_pseudo_update = 1;
+		iter_pseudo_update = get_current_batch(net) + pseudo_update_for_each;
+		//iter_pseudo_update = 1;
 		pseudo_update_cnt = 0;
 		for (int p = 0; p < ngpus; p++) {
 			modify_yolo_layer(&nets[p]);
@@ -278,7 +278,8 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
             if (i < net.burn_in * 3) fprintf(stderr, "\n Tensor Cores are disabled until the first %d iterations are reached.", 3 * net.burn_in);
             else fprintf(stderr, "\n Tensor Cores are used.");
         }
-        printf("\n %d: %f, %f avg loss, %f rate, %lf seconds, %d images\n", get_current_batch(net), loss, avg_loss, get_current_rate(net), (what_time_is_it_now() - time), i*imgs);
+        //printf("\n %d: %f, %f avg loss, %f rate, %lf seconds, %d images\n", get_current_batch(net), loss, avg_loss, get_current_rate(net), (what_time_is_it_now() - time), i*imgs);
+        printf(" %d: %f, %f avg loss, %f rate, %lf seconds, %d images\n", get_current_batch(net), loss, avg_loss, get_current_rate(net), (what_time_is_it_now() - time), i*imgs);
 
         int draw_precision = 0;
         if (calc_map && (i >= next_map_calc || i == net.max_batches)) {
@@ -313,8 +314,8 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
 
         //if (i % 1000 == 0 || (i < 1000 && i % 100 == 0)) {
         //if (i % 100 == 0) {
-        //if (i >= (iter_save + 1000) || i % 1000 == 0) {
-        if (i >= (iter_save_last + 100) || i % 100 == 0) {
+        if (i >= (iter_save + 1000) || i % 1000 == 0) {
+        //if (i >= (iter_save_last + 100) || i % 100 == 0) {
             iter_save = i;
 #ifdef GPU
             if (ngpus != 1) sync_nets(nets, ngpus, 0);
