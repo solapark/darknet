@@ -380,10 +380,10 @@ void fill_truth_region(char *path, float *truth, int classes, int num_boxes, int
 }
 
 void fill_truth_detection(const char *path, int num_boxes, float *truth, int classes, int flip, float dx, float dy, float sx, float sy,
-    int net_w, int net_h, int is_pseudo_train)
+    int net_w, int net_h, int is_pseudo_train, char* label_dir)
 {
     char labelpath[4096];
-    replace_image_to_label(path, labelpath);
+    replace_image_to_target_label(path, labelpath, label_dir);
 
     int count = 0;
     int i;
@@ -835,7 +835,7 @@ static box float_to_box_stride(float *f, int stride)
 
 data load_data_detection(int n, char **paths, int m, int w, int h, int c, int boxes, int classes, int use_flip, float jitter,
     //float hue, float saturation, float exposure, int mini_batch, int track, int augment_speed, int show_imgs)
-    float hue, float saturation, float exposure, int mini_batch, int track, int augment_speed, int show_imgs, int is_pseudo_train)
+    float hue, float saturation, float exposure, int mini_batch, int track, int augment_speed, int show_imgs, int is_pseudo_train, char* label_dir)
 {
     c = c ? c : 3;
     char **random_paths;
@@ -909,7 +909,7 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int c, int bo
         image ai = image_data_augmentation(src, w, h, pleft, ptop, swidth, sheight, flip, jitter, dhue, dsat, dexp);
         d.X.vals[i] = ai.data;
 
-        fill_truth_detection(filename, boxes, d.y.vals[i], classes, flip, dx, dy, 1./sx, 1./sy, w, h, is_pseudo_train);
+        fill_truth_detection(filename, boxes, d.y.vals[i], classes, flip, dx, dy, 1./sx, 1./sy, w, h, is_pseudo_train, label_dir);
 
         if(show_imgs)
         {
@@ -1067,7 +1067,8 @@ void *load_thread(void *ptr)
     } else if (a.type == DETECTION_DATA){
         *a.d = load_data_detection(a.n, a.paths, a.m, a.w, a.h, a.c, a.num_boxes, a.classes, a.flip, a.jitter,
             //a.hue, a.saturation, a.exposure, a.mini_batch, a.track, a.augment_speed, a.show_imgs);
-            a.hue, a.saturation, a.exposure, a.mini_batch, a.track, a.augment_speed, a.show_imgs, a.pseudo_train);
+            //a.hue, a.saturation, a.exposure, a.mini_batch, a.track, a.augment_speed, a.show_imgs, a.pseudo_train);
+            a.hue, a.saturation, a.exposure, a.mini_batch, a.track, a.augment_speed, a.show_imgs, a.pseudo_train, a.label_dir);
     } else if (a.type == SWAG_DATA){
         *a.d = load_data_swag(a.paths, a.n, a.classes, a.jitter);
     } else if (a.type == COMPARE_DATA){

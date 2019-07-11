@@ -28,6 +28,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     char *train_images = option_find_str(options, "train", "data/train.txt");
     char *valid_images = option_find_str(options, "valid", train_images);
     char *backup_directory = option_find_str(options, "backup", "/backup/");
+    char *label_dir = option_find_str(options, "label_dir", "/labels/");
 
     network net_map;
     if (calc_map) {
@@ -146,6 +147,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     args.show_imgs = show_imgs;
 
     args.pseudo_train = net.pseudo_train;
+    args.label_dir = label_dir;
 
 #ifdef OPENCV
     args.threads = 3 * ngpus;   // Amazon EC2 Tesla V100: p3.2xlarge (8 logical cores) - p3.16xlarge

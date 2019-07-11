@@ -738,6 +738,7 @@ typedef struct load_args {
     data_type type;
     tree *hierarchy;
 	int pseudo_train;
+	char* label_dir;
 } load_args;
 
 // data.h
