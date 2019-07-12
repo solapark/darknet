@@ -316,8 +316,8 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
 
         //if (i % 1000 == 0 || (i < 1000 && i % 100 == 0)) {
         //if (i % 100 == 0) {
-        //if (i >= (iter_save + 1000) || i % 1000 == 0 || (i < 101 && i/100 ==0)) {
-        if (i >= (iter_save + 100) || i % 100 == 0) {
+        if (i >= (iter_save + 1000) || i % 1000 == 0 || (i < 101 && i/100 ==0)) {
+        //if (i >= (iter_save + 100) || i % 100 == 0) {
             iter_save = i;
 #ifdef GPU
             if (ngpus != 1) sync_nets(nets, ngpus, 0);
@@ -690,6 +690,7 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
     char *difficult_valid_images = option_find_str(options, "difficult", NULL);
     char *name_list = option_find_str(options, "names", "data/names.list");
     char **names = get_labels(name_list);
+    char *label_dir = option_find_str(options, "label_dir", NULL);
     //char *mapf = option_find_str(options, "map", 0);
     //int *map = 0;
     //if (mapf) map = read_map(mapf);
@@ -808,7 +809,13 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
             if (nms) do_nms_sort(dets, nboxes, l.classes, nms);
 
             char labelpath[4096];
-            replace_image_to_label(path, labelpath);
+            //replace_image_to_label(path, labelpath);
+			if(label_dir){
+	            replace_image_to_target_label(path, labelpath, label_dir);
+			}else{
+				replace_image_to_label(path, labelpath);
+			}
+
             int num_labels = 0;
             box_label *truth = read_boxes(labelpath, &num_labels);
             int i, j;
