@@ -246,7 +246,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
         save_image(im, "truth11");
         */
 
-        printf("Loaded: %lf seconds\n", (what_time_is_it_now() - time));
+        //printf("Loaded: %lf seconds\n", (what_time_is_it_now() - time));
 
         time = what_time_is_it_now();
         float loss = 0;
@@ -1384,6 +1384,7 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
     int names_size = 0;
     char **names = get_labels_custom(name_list, &names_size); //get_labels(name_list);
 
+    char *label_dir = option_find_str(options, "label_dir", NULL);
     image **alphabet = load_alphabet();
     network net = parse_network_cfg_custom(cfgfile, 1, 1); // set batch=1
     if (weightfile) {
@@ -1468,7 +1469,13 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
         if (save_labels)
         {
             char labelpath[4096];
-            replace_image_to_label(input, labelpath);
+            //replace_image_to_label(input, labelpath);
+			if(label_dir){
+	            replace_image_to_target_label(input, labelpath, label_dir);
+			}else{
+				replace_image_to_label(input, labelpath);
+			}
+
 
             FILE* fw = fopen(labelpath, "wb");
             int i;
