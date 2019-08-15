@@ -176,7 +176,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
 			printf("pseudo_label update\n");
 			//save weights
             char buff[256];
-            sprintf(buff, "%s/%s_%d_pseudo_update%d_lb_%2.2f_ub_%2.2f.weights", backup_directory, base, get_current_batch(net), pseudo_update_cnt++, nets[0].ignore_lb, nets[0].ignore_ub );
+            sprintf(buff, "%s/%s_pseudo_update%d_lb_%2.2f_ub_%2.2f_%d.weights", backup_directory, base, pseudo_update_cnt++, nets[0].ignore_lb, nets[0].ignore_ub, get_current_batch(net) );
             save_weights(net, buff);
 			
 			//generate new labels
