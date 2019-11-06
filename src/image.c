@@ -404,11 +404,17 @@ void draw_detections_v3(image im, detection *dets, int num, float thresh, char *
             if (alphabet) {
                 char labelstr[4096] = { 0 };
                 strcat(labelstr, names[selected_detections[i].best_class]);
+                char prob_buff[100];
+                sprintf(prob_buff, "%.0f", selected_detections[i].det.prob[selected_detections[i].best_class] * 100);
+                strcat(labelstr, prob_buff);
                 int j;
                 for (j = 0; j < classes; ++j) {
                     if (selected_detections[i].det.prob[j] > thresh && j != selected_detections[i].best_class) {
                         strcat(labelstr, ", ");
                         strcat(labelstr, names[j]);
+                        char prob_buff[100]; 
+                        sprintf(prob_buff, "%.0f", selected_detections[i].det.prob[j] * 100); 
+                        strcat(labelstr, prob_buff);
                     }
                 }
                 image label = get_label_v3(alphabet, labelstr, (im.h*.03));
