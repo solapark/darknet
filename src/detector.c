@@ -183,6 +183,10 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
 			for (int p = 0; p < ngpus; p++) {
 				update_yolo_layer_lb_ub(&(nets[p]));
 			}
+		    if (nets[0].ignore_lb > nets[0].ignore_ub) {
+                printf("lb > ub\n");
+                break;
+            }
 			gen_pseudo_label(datacfg, cfgfile, buff, paths, nets[0].ignore_lb, 0.5, 1, 0, 1, 0, train_images_num);
 
 			//update variable 
@@ -316,7 +320,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
 
         //if (i % 1000 == 0 || (i < 1000 && i % 100 == 0)) {
         //if (i % 100 == 0) {
-        if (i >= (iter_save + 1000) || i % 1000 == 0 || (i < 101 && i%100 ==0)) {
+        if (i >= (iter_save + 1000) || i % 1000 == 0 || (i < 101 && i%100 ==0) || (net.pseudo_train && i >= (iter_save + 100)) ) {
         //if (i >= (iter_save + 100) || i % 100 == 0) {
             iter_save = i;
 #ifdef GPU
