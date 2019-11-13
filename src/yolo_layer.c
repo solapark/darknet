@@ -375,7 +375,8 @@ void forward_yolo_layer_pseudo(const layer l, network_state state)
                     int obj_index = entry_index(l, b, n*l.w*l.h + j*l.w + i, 4);
                     avg_anyobj += l.output[obj_index];
                     l.delta[obj_index] = 0 - l.output[obj_index];
-                    if (best_iou > l.ignore_thresh) {
+                    //if (best_iou > l.ignore_thresh) {
+                    if (best_iou > l.ignore_thresh || l.output[obj_index] > l.ignore_lb) {
                         l.delta[obj_index] = 0;
                     }
                     if (best_iou > l.truth_thresh) {
