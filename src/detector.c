@@ -29,6 +29,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     char *valid_images = option_find_str(options, "valid", train_images);
     char *backup_directory = option_find_str(options, "backup", "/backup/");
     char *label_dir = option_find_str(options, "label_dir", "/labels/");
+    char *target_images = option_find_str(options, "target", "__");
 
     network net_map;
     if (calc_map) {
@@ -99,6 +100,10 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     int train_images_num = plist->size;
     char **paths = (char **)list_to_array(plist);
 
+    list *target_list = get_paths(target_images);
+    int target_images_num = target_list->size;
+    char **target_path = (char **)list_to_array(target_list);
+    
     int init_w = net.w;
     int init_h = net.h;
     int iter_save, iter_save_last, iter_map;
@@ -118,7 +123,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
 			modify_yolo_layer(&nets[p]);
 		}
 		if(net.generate_first_label){
-			gen_pseudo_label(datacfg, cfgfile, weightfile, paths, net.ignore_lb, 0.5, 1, 0, 1, 0, train_images_num);
+			gen_pseudo_label(datacfg, cfgfile, weightfile, target_path, net.ignore_lb, 0.5, 1, 0, 1, 0, target_images_num);
 		}
 		//printf("net.pseudo_update_epoch : %d, train_images_num : %d, net.batch : %d, net.subdivisions : %d, get_current_batch(net) : %d\n", net.pseudo_update_epoch, train_images_num, net.batch, net.subdivisions, get_current_batch(net));
 		printf("1st generation of pseudo label : %d\n", iter_pseudo_update);
@@ -1350,7 +1355,7 @@ void gen_pseudo_label(char *datacfg, char *cfgfile, char *weightfile, char **fil
                     }
                 }
                 if (class_id >= 0) {
-                    sprintf(buff, "%d %2.4f %2.4f %2.4f %2.4f %2.4f\n", class_id, dets[i].bbox.x, dets[i].bbox.y, dets[i].bbox.w, dets[i].bbox.h, prob);
+                    sprintf(buff, "%d %2.4f %2.4f %2.4f %2.4f %1.1f\n", class_id, dets[i].bbox.x, dets[i].bbox.y, dets[i].bbox.w, dets[i].bbox.h, 1.0);
                     fwrite(buff, sizeof(char), strlen(buff), fw);
                 }
             }
@@ -1361,7 +1366,7 @@ void gen_pseudo_label(char *datacfg, char *cfgfile, char *weightfile, char **fil
         free_image(sized);
 		if(p%100==0) printf("gen pseudo label %d/%d DONE\n", p+1, train_images_num);
     }
-
+    printf("gen pseudo label %d DONE\n", train_images_num);
     // free memory
     free_ptrs((void**)names, net.layers[net.n - 1].classes);
     free_list_contents_kvp(options);
