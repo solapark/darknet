@@ -192,7 +192,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
                 printf("lb > ub\n");
                 break;
             }
-			gen_pseudo_label(datacfg, cfgfile, buff, paths, nets[0].ignore_lb, 0.5, 1, 0, 1, 0, train_images_num);
+			gen_pseudo_label(datacfg, cfgfile, buff, target_path, nets[0].ignore_lb, 0.5, 1, 0, 1, 0, target_images_num);
 
 			//update variable 
 			iter_pseudo_update =get_current_batch(net) +  pseudo_update_for_each;
