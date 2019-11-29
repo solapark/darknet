@@ -374,23 +374,29 @@ void forward_yolo_layer_pseudo(const layer l, network_state state)
                     }
                     int obj_index = entry_index(l, b, n*l.w*l.h + j*l.w + i, 4);
                     avg_anyobj += l.output[obj_index];
-                    l.delta[obj_index] = 0 - l.output[obj_index];
-                    //if (best_iou > l.ignore_thresh) {
-                    if (best_iou > l.ignore_thresh || l.output[obj_index] > l.ignore_lb) {
+                    float is_target = state.truth[0*(4 + 1 + 1) + b*l.truths + 5];
+                    if (is_target) {
                         l.delta[obj_index] = 0;
-                    }
-                    if (best_iou > l.truth_thresh) {
-                        l.delta[obj_index] = 1 - l.output[obj_index];
+                    }else {
+                        l.delta[obj_index] = 0 - l.output[obj_index];
+                    
+                        if (best_iou > l.ignore_thresh) {
+                        //if (best_iou > l.ignore_thresh || l.output[obj_index] > l.ignore_lb) {
+                            l.delta[obj_index] = 0;
+                        }
+                        if (best_iou > l.truth_thresh) {
+                            l.delta[obj_index] = 1 - l.output[obj_index];
 
-                        //int class_id = state.truth[best_t*(4 + 1) + b*l.truths + 4];
-                        int class_id = state.truth[best_t*(4 + 1 + 1) + b*l.truths + 4];
-                        if (l.map) class_id = l.map[class_id];
-                        int class_index = entry_index(l, b, n*l.w*l.h + j*l.w + i, 4 + 1);
-                        delta_yolo_class(l.output, l.delta, class_index, class_id, l.classes, l.w*l.h, 0, l.focal_loss);
-                        //box truth = float_to_box_stride(state.truth + best_t*(4 + 1) + b*l.truths, 1);
-                        box truth = float_to_box_stride(state.truth + best_t*(4 + 1 + 1) + b*l.truths, 1);
-                        delta_yolo_box(truth, l.output, l.biases, l.mask[n], box_index, i, j, l.w, l.h, state.net.w, state.net.h, l.delta, (2-truth.w*truth.h), l.w*l.h);
-                    }
+                            //int class_id = state.truth[best_t*(4 + 1) + b*l.truths + 4];
+                            int class_id = state.truth[best_t*(4 + 1 + 1) + b*l.truths + 4];
+                            if (l.map) class_id = l.map[class_id];
+                            int class_index = entry_index(l, b, n*l.w*l.h + j*l.w + i, 4 + 1);
+                            delta_yolo_class(l.output, l.delta, class_index, class_id, l.classes, l.w*l.h, 0, l.focal_loss);
+                            //box truth = float_to_box_stride(state.truth + best_t*(4 + 1) + b*l.truths, 1);
+                            box truth = float_to_box_stride(state.truth + best_t*(4 + 1 + 1) + b*l.truths, 1);
+                            delta_yolo_box(truth, l.output, l.biases, l.mask[n], box_index, i, j, l.w, l.h, state.net.w, state.net.h, l.delta, (2-truth.w*truth.h), l.w*l.h);
+                        }
+                    } 
                 }
             }
         }
@@ -406,11 +412,12 @@ void forward_yolo_layer_pseudo(const layer l, network_state state)
 			//printf("ignore lb : %f, ignore up : %f\n", l.ignore_lb, l.ignore_ub);
 			//printf("truth.x : %f, truth.y : %f, truth.w : %f, truth.h : %f\n", truth.x, truth.y, truth.w, truth.h);
             if(!truth.x) break;  // continue;
-            float truth_prob = state.truth[t*(4 + 1 + 1) + b*l.truths + 5];
+            /*
 			if (truth_prob < l.ignore_lb){
 				//printf("t : %d, FP, truth_prob = %f\n", t, truth_prob);
 				continue;
 			}
+            */
             float best_iou = 0;
             int best_n = 0;
             i = (truth.x * l.w);
@@ -431,13 +438,20 @@ void forward_yolo_layer_pseudo(const layer l, network_state state)
             int mask_n = int_index(l.mask, best_n, l.n);
             if(mask_n >= 0){
                 int obj_index = entry_index(l, b, mask_n*l.w*l.h + j*l.w + i, 4);
+                /*
 				if (l.ignore_lb <= truth_prob && truth_prob < l.ignore_ub){
 					//printf("t : %d, ignore, truth_prob = %f\n", t, truth_prob);
 					l.delta[obj_index] = 0;
 					continue;
 				}
+                */
 				//printf("t : %d, TP, truth_prob = %f\n", t, truth_prob);
                 avg_obj += l.output[obj_index];
+                float is_target = state.truth[t*(4 + 1 + 1) + b*l.truths + 5];
+                if(!is_target){
+                    l.delta[obj_index] = 0;
+                    continue;
+                }
                 l.delta[obj_index] = 1 - l.output[obj_index];
 
                 int box_index = entry_index(l, b, mask_n*l.w*l.h + j*l.w + i, 0);
